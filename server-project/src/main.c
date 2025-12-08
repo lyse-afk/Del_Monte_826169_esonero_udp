@@ -1,5 +1,5 @@
 /*
- * main.c
+ * server.c
  *
  * UDP Server - Meteo
  */
@@ -14,7 +14,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <netdb.h>
 #define closesocket close
 #endif
 
@@ -32,8 +31,8 @@ void clearwinsock() {
 }
 
 // Funzioni "fake" per generare valori meteo
-float get_temperature(void) { return 20.0f + (rand()%1000)/100.0f; } // 20.0-29.9 °C
-float get_humidity(void)    { return 40.0f + (rand()%600)/10.0f; }   // 40.0-99.9 %
+float get_temperature(void) { return 20.0f + (rand()%1000)/100.0f; } // 20-29.9 °C
+float get_humidity(void)    { return 40.0f + (rand()%600)/10.0f; }   // 40-99.9 %
 float get_wind(void)        { return (rand()%2000)/10.0f; }          // 0-199.9 km/h
 float get_pressure(void)    { return 980.0f + (rand()%400)/10.0f; }  // 980-1019.9 hPa
 
@@ -52,8 +51,15 @@ static int is_supported_city(const char *city) {
     return 0;
 }
 
+static int city_valid_chars(const char *city) {
+    for (const char *p=city; *p; ++p)
+        if (!isalpha((unsigned char)*p) && *p!=' ') return 0;
+    return 1;
+}
+
 int main(int argc,char *argv[]) {
     int port = DEFAULT_PORT;
+
 #if defined WIN32
     WSADATA wsa_data;
     if (WSAStartup(MAKEWORD(2,2), &wsa_data)!=0) { fprintf(stderr,"WSAStartup failed\n"); return 1; }
@@ -84,30 +90,25 @@ int main(int argc,char *argv[]) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         char buffer[1+CITY_MAX_LEN];
+        memset(buffer,0,sizeof(buffer));
+
         int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr*)&client_addr, &client_len);
         if (bytes != sizeof(buffer)) { fprintf(stderr,"Datagramma invalido\n"); continue; }
 
-        // Deserializzazione richiesta
         weather_request_t request;
         request.type = buffer[0];
         memcpy(request.city, buffer+1, CITY_MAX_LEN);
+        request.city[CITY_MAX_LEN-1]='\0';
 
-        // Log richiesta
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET,&client_addr.sin_addr,client_ip,sizeof(client_ip));
-        char client_host[NI_MAXHOST];
-        if (getnameinfo((struct sockaddr*)&client_addr, client_len, client_host,sizeof(client_host), NULL,0,0)!=0)
-            strcpy(client_host,"unknown");
-
-        printf("Richiesta ricevuta da %s (ip %s): type='%c', city='%s'\n", client_host, client_ip, request.type, request.city);
+        weather_response_t response;
+        memset(&response,0,sizeof(response));
 
         // Validazione
         int type_ok = (request.type==TYPE_TEMP || request.type==TYPE_HUM || request.type==TYPE_WIND || request.type==TYPE_PRESS);
         int city_ok = is_supported_city(request.city);
+        int city_chars_ok = city_valid_chars(request.city);
 
-        weather_response_t response;
-        memset(&response,0,sizeof(response));
-        if (!type_ok) response.status = STATUS_BAD_REQUEST;
+        if (!type_ok || !city_chars_ok) response.status = STATUS_BAD_REQUEST;
         else if (!city_ok) response.status = STATUS_CITY_NOT_FOUND;
         else {
             response.status = STATUS_OK;
@@ -120,7 +121,7 @@ int main(int argc,char *argv[]) {
             }
         }
 
-        // Serializzazione risposta
+        // Serializzazione
         char sbuffer[sizeof(uint32_t)+1+sizeof(uint32_t)];
         uint32_t tmp;
         tmp = htonl(response.status);
