@@ -62,7 +62,7 @@ int main(int argc, char *argv[]) {
 
     const char *city_start = req_str + 1;
     while (*city_start==' ') city_start++;
-    if (strlen(city_start) >= CITY_MAX_LEN) { fprintf(stderr,"Nome cittÃ  troppo lungo\n"); return 1; }
+    if (strlen(city_start) >= CITY_MAX_LEN) { fprintf(stderr,"Nome città  troppo lungo\n"); return 1; }
     strncpy(request.city, city_start, CITY_MAX_LEN-1);
 
     // Risoluzione server
@@ -117,16 +117,16 @@ int main(int argc, char *argv[]) {
     inet_ntop(AF_INET,&from_addr.sin_addr,ip_str,sizeof(ip_str));
 
     // Stampa risultato
-    printf("Ricevuto risultato dal server %s (ip %s). ", host, ip_str);
     if (response.status==STATUS_OK) {
+        printf("Ricevuto risultato dal server %s (ip %s). ", host, ip_str);
         switch (response.type) {
             case TYPE_TEMP:  printf("%s: Temperatura = %.1f°C\n", request.city, response.value); break;
-            case TYPE_HUM:   printf("%s: Umidita'  = %.1f%%\n", request.city, response.value); break;
+            case TYPE_HUM:   printf("%s: Umidità  = %.1f%%\n", request.city, response.value); break;
             case TYPE_WIND:  printf("%s: Vento = %.1f km/h\n", request.city, response.value); break;
             case TYPE_PRESS: printf("%s: Pressione = %.1f hPa\n", request.city, response.value); break;
             default: printf("Risposta non valida\n"); break;
         }
-    } else if (response.status==STATUS_CITY_NOT_FOUND) printf("CittÃ  non disponibile\n");
+    } else if (response.status==STATUS_CITY_NOT_FOUND) printf("Città  non disponibile\n");
     else if (response.status==STATUS_BAD_REQUEST) printf("Richiesta non valida\n");
     else printf("Risposta non valida\n");
 
