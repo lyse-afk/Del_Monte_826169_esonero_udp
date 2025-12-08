@@ -1,7 +1,7 @@
 /*
  * protocol.h
  *
- * Client header file
+ * Server header file
  * Definitions, constants and function prototypes for the server
  */
 #ifndef PROTOCOL_H_
