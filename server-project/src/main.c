@@ -31,14 +31,24 @@ void clearwinsock() {
 #endif
 }
 
+// Funzioni "fake" per generare valori meteo
+float get_temperature(void) { return 20.0f + (rand()%1000)/100.0f; } // 20.0-29.9 °C
+float get_humidity(void)    { return 40.0f + (rand()%600)/10.0f; }   // 40.0-99.9 %
+float get_wind(void)        { return (rand()%2000)/10.0f; }          // 0-199.9 km/h
+float get_pressure(void)    { return 980.0f + (rand()%400)/10.0f; }  // 980-1019.9 hPa
+
 static int equals_ignore_case(const char *a, const char *b) {
-    while (*a && *b) { if (tolower((unsigned char)*a)!=tolower((unsigned char)*b)) return 0; a++; b++; }
+    while (*a && *b) {
+        if (tolower((unsigned char)*a)!=tolower((unsigned char)*b)) return 0;
+        a++; b++;
+    }
     return *a=='\0' && *b=='\0';
 }
 
 static int is_supported_city(const char *city) {
     const char *cities[] = {"Bari","Roma","Milano","Napoli","Torino","Palermo","Genova","Bologna","Firenze","Venezia"};
-    for (size_t i=0;i<sizeof(cities)/sizeof(cities[0]);++i) if (equals_ignore_case(city,cities[i])) return 1;
+    for (size_t i=0;i<sizeof(cities)/sizeof(cities[0]);++i)
+        if (equals_ignore_case(city,cities[i])) return 1;
     return 0;
 }
 
@@ -49,7 +59,9 @@ int main(int argc,char *argv[]) {
     if (WSAStartup(MAKEWORD(2,2), &wsa_data)!=0) { fprintf(stderr,"WSAStartup failed\n"); return 1; }
 #endif
 
-    for (int i=1;i<argc;++i) { if (strcmp(argv[i],"-p")==0 && i+1<argc) port=atoi(argv[++i]); }
+    for (int i=1;i<argc;++i) {
+        if (strcmp(argv[i],"-p")==0 && i+1<argc) port=atoi(argv[++i]);
+    }
 
     srand((unsigned int)time(NULL));
 
@@ -62,7 +74,9 @@ int main(int argc,char *argv[]) {
     server_addr.sin_port = htons((unsigned short)port);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(sock,(struct sockaddr*)&server_addr,sizeof(server_addr))<0) { perror("bind"); closesocket(sock); clearwinsock(); return 1; }
+    if (bind(sock,(struct sockaddr*)&server_addr,sizeof(server_addr))<0) {
+        perror("bind"); closesocket(sock); clearwinsock(); return 1;
+    }
 
     printf("Server UDP in ascolto sulla porta %d\n", port);
 
@@ -82,7 +96,8 @@ int main(int argc,char *argv[]) {
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET,&client_addr.sin_addr,client_ip,sizeof(client_ip));
         char client_host[NI_MAXHOST];
-        if (getnameinfo((struct sockaddr*)&client_addr, client_len, client_host,sizeof(client_host), NULL,0,0)!=0) strcpy(client_host,"unknown");
+        if (getnameinfo((struct sockaddr*)&client_addr, client_len, client_host,sizeof(client_host), NULL,0,0)!=0)
+            strcpy(client_host,"unknown");
 
         printf("Richiesta ricevuta da %s (ip %s): type='%c', city='%s'\n", client_host, client_ip, request.type, request.city);
 
