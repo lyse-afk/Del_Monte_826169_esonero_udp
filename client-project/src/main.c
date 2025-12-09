@@ -1,12 +1,15 @@
 /*
  * main.c
  *
- * UDP Client - Portable for Windows/Linux/macOS
+ * UDP Client - Template for Computer Networks assignment
+ *
+ * This file contains the boilerplate code for a UDP client
+ * portable across Windows, Linux, and macOS.
  */
 
-#if defined WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#if defined WIN32 || defined _WIN32
+#include <winsock.h>
+typedef int socklen_t;
 #else
 #include <string.h>
 #include <unistd.h>
@@ -20,131 +23,179 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "protocol.h"
-#include <stdint.h>
+
+#define BUFFER_SIZE 512
 
 void clearwinsock() {
-#if defined WIN32
-    WSACleanup();
+#if defined WIN32 || defined _WIN32
+	WSACleanup();
 #endif
-}
-
-static void print_usage(const char *progname) {
-    printf("Uso: %s [-s server] [-p port] -r \"type city\"\n", progname);
-    printf("  -s server   Indirizzo IP o hostname del server (default 127.0.0.1)\n");
-    printf("  -p port     Porta del server (default %d)\n", DEFAULT_PORT);
-    printf("  -r request  Richiesta meteo nel formato \"type city\" (obbligatoria)\n");
-}
-
-static void serialize_request(weather_request_t *req, char *buffer, int *len) {
-    int offset = 0;
-    buffer[offset++] = req->type;
-    memcpy(buffer + offset, req->city, CITY_MAX_LEN);
-    offset += CITY_MAX_LEN;
-    *len = offset;
-}
-
-static void deserialize_response(weather_response_t *resp, char *buffer, int len) {
-    int offset = 0;
-    uint32_t net_status;
-    memcpy(&net_status, buffer + offset, sizeof(uint32_t));
-    resp->status = ntohl(net_status);
-    offset += sizeof(uint32_t);
-
-    memcpy(&resp->type, buffer + offset, sizeof(char));
-    offset += sizeof(char);
-
-    uint32_t net_value;
-    memcpy(&net_value, buffer + offset, sizeof(uint32_t));
-    net_value = ntohl(net_value);
-    memcpy(&resp->value, &net_value, sizeof(float));
 }
 
 int main(int argc, char *argv[]) {
-    const char *server_name = "127.0.0.1";
-    int port = DEFAULT_PORT;
-    const char *req_str = NULL;
 
-    for (int i=1; i<argc; i++) {
-        if (strcmp(argv[i],"-s")==0 && i+1<argc) server_name = argv[++i];
-        else if (strcmp(argv[i],"-p")==0 && i+1<argc) port = atoi(argv[++i]);
-        else if (strcmp(argv[i],"-r")==0 && i+1<argc) req_str = argv[++i];
-        else { print_usage(argv[0]); return 1; }
-    }
+	// Implement client logic
+	char *server_ip = "localhost";
+	int port = SERVER_PORT;
+	char *request_str = NULL;
 
-    if (!req_str) { fprintf(stderr,"Errore: parametro -r obbligatorio.\n"); print_usage(argv[0]); return 1; }
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+			server_ip = argv[i + 1];
+			i++;
+		} else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
+			port = atoi(argv[i + 1]);
+			i++;
+		} else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc) {
+			request_str = argv[i + 1];
+			i++;
+		} else {
+			printf("Uso: %s [-s server] [-p port] -r \"tipo citta\"\n", argv[0]);
+			return 1;
+		}
+	}
 
-#if defined WIN32
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2,2), &wsa_data)!=0) { fprintf(stderr,"WSAStartup failed\n"); return 1; }
+	if (request_str == NULL) {
+		printf("Errore: parametro -r obbligatorio\n");
+		return 1;
+	}
+
+	if (strchr(request_str, '\t') != NULL) {
+		printf("Errore: la richiesta contiene caratteri di tabulazione non ammessi.\n");
+		return 1;
+	}
+	char *first_space = strchr(request_str, ' ');
+	if (first_space == NULL) {
+		printf("Errore: formato richiesta errato. Esempio: \"t Roma\"\n");
+		return 1;
+	}
+
+	int type_len = first_space - request_str;
+	if (type_len != 1) {
+		printf("Errore: il tipo richiesta deve essere un singolo carattere.\n");
+		return 1;
+	}
+
+	char type = request_str[0];
+	char *city_ptr = first_space + 1;
+
+	if (strlen(city_ptr) >= 64) {
+		printf("Errore: nome città troppo lungo.\n");
+		return 1;
+	}
+
+#if defined WIN32 || defined _WIN32
+	// Initialize Winsock
+	WSADATA wsa_data;
+	int result = WSAStartup(MAKEWORD(2,2), &wsa_data);
+	if (result != 0) {
+		printf("Error at WSAStartup()\n");
+		return 0;
+	}
 #endif
 
-    // Parsing richiesta
-    weather_request_t request;
-    memset(&request,0,sizeof(request));
-    if (strlen(req_str)<1) { fprintf(stderr,"Richiesta non valida\n"); return 1; }
-    request.type = req_str[0];
+	int my_socket;
 
-    const char *city_start = req_str+1;
-    while (*city_start==' ') city_start++;
-    if (strlen(city_start)>=CITY_MAX_LEN) { fprintf(stderr,"Nome città troppo lungo\n"); return 1; }
-    strncpy(request.city, city_start, CITY_MAX_LEN-1);
-    request.city[CITY_MAX_LEN-1] = '\0';
+	// Create UDP socket
+	my_socket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (my_socket < 0) {
+		printf("Errore creazione socket.\n");
+		clearwinsock();
+		return 1;
+	}
 
-    // Creazione socket UDP
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock<0) { perror("socket() failed"); clearwinsock(); return 1; }
+	// Configure server address
+	struct sockaddr_in sad;
+	memset(&sad, 0, sizeof(sad));
+	sad.sin_family = AF_INET;
+	sad.sin_port = htons(port);
 
-    // Risoluzione server
-    struct hostent *host = gethostbyname(server_name);
-    if (!host) { fprintf(stderr,"gethostbyname() failed per %s\n", server_name); closesocket(sock); clearwinsock(); return 1; }
+	struct hostent *host = gethostbyname(server_ip);
+	if (host == NULL) {
+		printf("Errore risoluzione nome server.\n");
+		closesocket(my_socket);
+		clearwinsock();
+		return 1;
+	}
+	memcpy(&sad.sin_addr, host->h_addr_list[0], host->h_length);
 
-    struct sockaddr_in server_addr;
-    memset(&server_addr,0,sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons((unsigned short)port);
-    memcpy(&server_addr.sin_addr, host->h_addr_list[0], host->h_length);
+	// Implement UDP communication logic
+	char send_buf[BUFFER_SIZE];
+	int offset = 0;
 
-    // Serializzazione richiesta
-    char send_buffer[BUFFER_SIZE];
-    int send_len = 0;
-    serialize_request(&request, send_buffer, &send_len);
+	// Serializzazione request
+	send_buf[offset] = type;
+	offset += sizeof(char);
+	strcpy(send_buf + offset, city_ptr);
+	offset += 64;
 
-    if (sendto(sock, send_buffer, send_len, 0, (struct sockaddr*)&server_addr, sizeof(server_addr)) != send_len) {
-        fprintf(stderr,"sendto() failed\n"); closesocket(sock); clearwinsock(); return 1;
-    }
+	if (sendto(my_socket, send_buf, offset, 0, (struct sockaddr*)&sad, sizeof(sad)) < 0) {
+		printf("Errore sendto.\n");
+		closesocket(my_socket);
+		clearwinsock();
+		return 1;
+	}
 
-    // Ricezione risposta
-    char recv_buffer[BUFFER_SIZE];
-    socklen_t addr_len = sizeof(server_addr);
-    int bytes = recvfrom(sock, recv_buffer, BUFFER_SIZE, 0, (struct sockaddr*)&server_addr, &addr_len);
-    if (bytes <= 0) { fprintf(stderr,"recvfrom() failed\n"); closesocket(sock); clearwinsock(); return 1; }
+	char recv_buf[BUFFER_SIZE];
+	struct sockaddr_in from_addr;
+	int from_len = sizeof(from_addr);
 
-    weather_response_t response;
-    deserialize_response(&response, recv_buffer, bytes);
+	int bytes_rcvd = recvfrom(my_socket, recv_buf, BUFFER_SIZE, 0, (struct sockaddr*)&from_addr, (socklen_t*)&from_len);
 
-    char server_ip[64];
-#if defined(__APPLE__) || defined(__linux__)
-    inet_ntop(AF_INET, &server_addr.sin_addr, server_ip, sizeof(server_ip));
-#else
-    strcpy(server_ip, inet_ntoa(server_addr.sin_addr));
-#endif
+	if (bytes_rcvd < 0) {
+		printf("Errore recvfrom.\n");
+		closesocket(my_socket);
+		clearwinsock();
+		return 1;
+	}
 
-    printf("Ricevuto risultato dal server %s (ip %s). ", server_name, server_ip);
+	// Deserializzazione
+	unsigned int resp_status;
+	char resp_type;
+	float resp_value;
+	int recv_offset = 0;
 
-    if (response.status==STATUS_OK) {
-        switch(response.type) {
-            case TYPE_TEMP:  printf("%s: Temperatura = %.1f°C\n", request.city, response.value); break;
-            case TYPE_HUM:   printf("%s: Umidità = %.1f%%\n", request.city, response.value); break;
-            case TYPE_WIND:  printf("%s: Vento = %.1f km/h\n", request.city, response.value); break;
-            case TYPE_PRESS: printf("%s: Pressione = %.1f hPa\n", request.city, response.value); break;
-            default: printf("Risposta non valida\n"); break;
-        }
-    } else if (response.status==STATUS_CITY_NOT_FOUND) printf("Città non disponibile\n");
-    else if (response.status==STATUS_BAD_REQUEST) printf("Richiesta non valida\n");
-    else printf("Risposta non valida\n");
+	unsigned long net_status;
+	memcpy(&net_status, recv_buf + recv_offset, sizeof(unsigned long));
+	resp_status = ntohl(net_status);
+	recv_offset += sizeof(unsigned long);
 
-    closesocket(sock);
-    clearwinsock();
-    return 0;
+	memcpy(&resp_type, recv_buf + recv_offset, sizeof(char));
+	recv_offset += sizeof(char);
+
+	unsigned long net_val;
+	memcpy(&net_val, recv_buf + recv_offset, sizeof(unsigned long));
+	net_val = ntohl(net_val);
+	memcpy(&resp_value, &net_val, sizeof(float));
+
+	// Reverse DNS output
+	struct hostent *he = gethostbyaddr((char *)&from_addr.sin_addr, 4, AF_INET);
+	char *server_name = (he != NULL) ? he->h_name : inet_ntoa(from_addr.sin_addr);
+	char *server_addr_ip = inet_ntoa(from_addr.sin_addr);
+
+	if (resp_status == STATUS_OK) {
+		printf("Ricevuto risultato dal server %s (ip %s). %s: ", server_name, server_addr_ip, city_ptr);
+		switch (resp_type) {
+			case 't': printf("Temperatura = %.1f°C\n", resp_value); break;
+			case 'h': printf("Umidità = %.1f%%\n", resp_value); break;
+			case 'w': printf("Vento = %.1f km/h\n", resp_value); break;
+			case 'p': printf("Pressione = %.1f hPa\n", resp_value); break;
+		}
+	} else if (resp_status == STATUS_CITY_NOT_FOUND) {
+		printf("Ricevuto risultato dal server %s (ip %s). Città non disponibile\n", server_name, server_addr_ip);
+	} else if (resp_status == STATUS_INVALID_REQUEST) {
+		printf("Ricevuto risultato dal server %s (ip %s). Richiesta non valida\n", server_name, server_addr_ip);
+	} else {
+		printf("Ricevuto risultato dal server %s (ip %s). Errore sconosciuto\n", server_name, server_addr_ip);
+	}
+
+	// Close socket
+	closesocket(my_socket);
+
+	printf("Client terminated.\n");
+
+	clearwinsock();
+	return 0;
 }
