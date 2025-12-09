@@ -1,12 +1,15 @@
 /*
  * main.c
  *
- * UDP Server - Portable for Windows/Linux/macOS
+ * UDP Server - Template for Computer Networks assignment
+ *
+ * This file contains the boilerplate code for a UDP server
+ * portable across Windows, Linux, and macOS.
  */
 
-#if defined WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#if defined WIN32 || defined _WIN32
+#include <winsock.h>
+typedef int socklen_t;
 #else
 #include <string.h>
 #include <unistd.h>
@@ -20,132 +23,187 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <time.h>
 #include "protocol.h"
-#include <stdint.h>
+
+#ifndef NO_ERROR
+#define NO_ERROR 0
+#endif
+
+#define BUFFER_SIZE 512
 
 void clearwinsock() {
-#if defined WIN32
-    WSACleanup();
+#if defined WIN32 || defined _WIN32
+	WSACleanup();
 #endif
 }
 
-static int equals_ignore_case(const char *a, const char *b) {
-    if (!a || !b) return 0;
-    while (*a && *b) { if (tolower((unsigned char)*a)!=tolower((unsigned char)*b)) return 0; ++a; ++b; }
-    return *a=='\0' && *b=='\0';
-}
-
-static int is_supported_city(const char *city) {
-    const char *cities[]={"Bari","Roma","Milano","Napoli","Torino","Palermo","Genova","Bologna","Firenze","Venezia"};
-    for (size_t i=0;i<sizeof(cities)/sizeof(cities[0]);++i) if (equals_ignore_case(city,cities[i])) return 1;
-    return 0;
-}
-
-static float float_rand(float min,float max){ return min + ((float)rand()/RAND_MAX)*(max-min); }
-
-float get_temperature(void){ return float_rand(-10.0f,40.0f); }
-float get_humidity(void){ return float_rand(20.0f,100.0f); }
-float get_wind(void){ return float_rand(0.0f,100.0f); }
-float get_pressure(void){ return float_rand(950.0f,1050.0f); }
-
-static void deserialize_request(weather_request_t *req, char *buffer, int len){
-    if (len<1+CITY_MAX_LEN) { memset(req,0,sizeof(weather_request_t)); return; }
-    req->type = buffer[0];
-    memcpy(req->city, buffer+1, CITY_MAX_LEN);
-}
-
-static void serialize_response(weather_response_t *resp, char *buffer, int *len){
-    int offset=0;
-    uint32_t net_status = htonl(resp->status);
-    memcpy(buffer+offset, &net_status, sizeof(uint32_t));
-    offset += sizeof(uint32_t);
-    memcpy(buffer+offset, &resp->type, sizeof(char));
-    offset += sizeof(char);
-    uint32_t temp;
-    memcpy(&temp,&resp->value,sizeof(float));
-    temp = htonl(temp);
-    memcpy(buffer+offset,&temp,sizeof(uint32_t));
-    offset += sizeof(uint32_t);
-    *len = offset;
-}
-
-int main(int argc,char *argv[]){
-    int port = DEFAULT_PORT;
-#if defined WIN32
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2,2), &wsa_data)!=0){ fprintf(stderr,"WSAStartup failed\n"); return 1; }
-#endif
-
-    for(int i=1;i<argc;i++){
-        if(strcmp(argv[i],"-p")==0 && i+1<argc) port=atoi(argv[++i]);
-        else { printf("Usage: %s [-p port]\n",argv[0]); return 1; }
-    }
-
-    srand((unsigned int)time(NULL));
-
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if(sock<0){ perror("socket() failed"); clearwinsock(); return 1; }
-
-    struct sockaddr_in server_addr;
-    memset(&server_addr,0,sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons((unsigned short)port);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if(bind(sock,(struct sockaddr*)&server_addr,sizeof(server_addr))<0){ perror("bind() failed"); closesocket(sock); clearwinsock(); return 1; }
-
-    printf("Server listening on port %d\n", port);
-
-    while(1){
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        char buffer[BUFFER_SIZE];
-
-        int bytes = recvfrom(sock, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &client_len);
-        if(bytes<=0){ perror("recvfrom() failed"); continue; }
-
-        weather_request_t request;
-        deserialize_request(&request, buffer, bytes);
-
-        char client_ip[64];
-#if defined(__APPLE__) || defined(__linux__)
-        inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, sizeof(client_ip));
+// Helper functions logic
+int is_valid_city(const char *city) {
+	const char* available_cities[] = {"bari", "roma", "milano", "napoli", "torino", "palermo", "genova", "bologna", "firenze", "venezia"};
+	int n = 10;
+	for (int i = 0; i < n; i++) {
+#if defined WIN32 || defined _WIN32
+		if (_stricmp(city, available_cities[i]) == 0) return 1;
 #else
-        strcpy(client_ip, inet_ntoa(client_addr.sin_addr));
+		if (strcasecmp(city, available_cities[i]) == 0) return 1;
+#endif
+	}
+	return 0;
+}
+
+int is_valid_type(char type) {
+	char l = tolower(type);
+	return (l == 't' || l == 'h' || l == 'w' || l == 'p');
+}
+
+
+int has_invalid_chars(const char *city) {
+	for (int i = 0; city[i] != '\0'; i++) {
+		// Se il carattere NON è una lettera E NON è uno spazio  è invalido
+		if (!isalnum(city[i]) && city[i] != ' ') {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+float get_temperature(void) { return -10.0 + (rand() / (float)RAND_MAX) * 50.0; }
+float get_humidity(void) { return 20.0 + (rand() / (float)RAND_MAX) * 80.0; }
+float get_wind(void) { return (rand() / (float)RAND_MAX) * 100.0; }
+float get_pressure(void) { return 950.0 + (rand() / (float)RAND_MAX) * 100.0; }
+
+int main(int argc, char *argv[]) {
+
+	// Implement server logic
+	srand(time(NULL));
+	int port = SERVER_PORT;
+
+	if (argc == 3 && strcmp(argv[1], "-p") == 0) {
+		port = atoi(argv[2]);
+	} else if (argc != 1) {
+		printf("Uso: %s [-p port]\n", argv[0]);
+		return 1;
+	}
+
+#if defined WIN32 || defined _WIN32
+	// Initialize Winsock
+	WSADATA wsa_data;
+	int result = WSAStartup(MAKEWORD(2,2), &wsa_data);
+	if (result != 0) {
+		printf("Error at WSAStartup()\n");
+		return 0;
+	}
 #endif
 
-        printf("Richiesta ricevuta da %s: type='%c', city='%s'\n", client_ip, request.type, request.city);
+	int my_socket;
 
-        weather_response_t response;
-        memset(&response,0,sizeof(response));
+	// Create UDP socket
+	my_socket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (my_socket < 0) {
+		printf("Errore creazione socket.\n");
+		clearwinsock();
+		return 1;
+	}
 
-        int type_ok = (request.type==TYPE_TEMP || request.type==TYPE_HUM || request.type==TYPE_WIND || request.type==TYPE_PRESS);
-        int city_ok = is_supported_city(request.city);
+	// Configure server address
+	struct sockaddr_in sad;
+	memset(&sad, 0, sizeof(sad));
+	sad.sin_family = AF_INET;
+	sad.sin_addr.s_addr = INADDR_ANY;
+	sad.sin_port = htons(port);
 
-        if(!type_ok) response.status = STATUS_BAD_REQUEST;
-        else if(!city_ok) response.status = STATUS_CITY_NOT_FOUND;
-        else {
-            response.status = STATUS_OK;
-            response.type = request.type;
-            switch(request.type){
-                case TYPE_TEMP:  response.value = get_temperature(); break;
-                case TYPE_HUM:   response.value = get_humidity(); break;
-                case TYPE_WIND:  response.value = get_wind(); break;
-                case TYPE_PRESS: response.value = get_pressure(); break;
-            }
-        }
+	// Bind socket
+	if (bind(my_socket, (struct sockaddr*)&sad, sizeof(sad)) < 0) {
+		printf("Errore bind.\n");
+		closesocket(my_socket);
+		clearwinsock();
+		return 1;
+	}
 
-        char send_buffer[BUFFER_SIZE];
-        int send_len=0;
-        serialize_response(&response, send_buffer, &send_len);
+	printf("Server UDP in ascolto sulla porta %d\n", port);
 
-        if(sendto(sock, send_buffer, send_len, 0, (struct sockaddr*)&client_addr, client_len)!=send_len)
-            fprintf(stderr,"sendto() failed per client %s\n", client_ip);
-    }
+	// Implement UDP datagram reception loop
+	char buffer[BUFFER_SIZE];
+	struct sockaddr_in client_addr;
+	int client_len;
 
-    closesocket(sock);
-    clearwinsock();
-    return 0;
+	while (1) {
+		client_len = sizeof(client_addr);
+		int bytes_rcvd = recvfrom(my_socket, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, (socklen_t*)&client_len);
+
+		if (bytes_rcvd < 0) continue;
+
+		// Log request
+		struct hostent *he = gethostbyaddr((char *)&client_addr.sin_addr, 4, AF_INET);
+		char *client_name = (he != NULL) ? he->h_name : inet_ntoa(client_addr.sin_addr);
+
+		if (strcmp(inet_ntoa(client_addr.sin_addr), "127.0.0.1") == 0) {
+			client_name = "localhost";
+		}
+
+		// Deserializzazione
+		char req_type = buffer[0];
+		char req_city[64];
+		strncpy(req_city, buffer + 1, 63);
+		req_city[63] = '\0';
+
+		printf("Richiesta ricevuta da %s (ip %s): type='%c', city='%s'\n", client_name, inet_ntoa(client_addr.sin_addr), req_type, req_city);
+
+		// Logic
+		unsigned int status = STATUS_OK;
+		float value = 0.0;
+		char type_lower = tolower(req_type);
+
+		if (!is_valid_type(type_lower)) {
+
+			status = STATUS_INVALID_REQUEST;
+		}
+		else if (has_invalid_chars(req_city)) {
+
+			status = STATUS_INVALID_REQUEST;
+			type_lower = req_type;
+		}
+		else if (!is_valid_city(req_city)) {
+
+			status = STATUS_CITY_NOT_FOUND;
+			type_lower = req_type;
+		}
+		else {
+
+			switch (type_lower) {
+				case 't': value = get_temperature(); break;
+				case 'h': value = get_humidity(); break;
+				case 'w': value = get_wind(); break;
+				case 'p': value = get_pressure(); break;
+			}
+		}
+
+		// Serializzazione response
+		char send_buf[BUFFER_SIZE];
+		int offset = 0;
+
+		unsigned long net_status = htonl(status);
+		memcpy(send_buf + offset, &net_status, sizeof(unsigned long));
+		offset += sizeof(unsigned long);
+
+		send_buf[offset] = (status == STATUS_INVALID_REQUEST) ? req_type : type_lower;
+		offset += sizeof(char);
+
+		unsigned long net_val;
+		memcpy(&net_val, &value, sizeof(float));
+		net_val = htonl(net_val);
+		memcpy(send_buf + offset, &net_val, sizeof(unsigned long));
+		offset += sizeof(unsigned long);
+
+		sendto(my_socket, send_buf, offset, 0, (struct sockaddr*)&client_addr, client_len);
+	}
+
+	printf("Server terminated.\n");
+
+	closesocket(my_socket);
+	clearwinsock();
+	return 0;
 }
